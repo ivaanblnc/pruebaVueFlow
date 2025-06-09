@@ -1,233 +1,195 @@
+<!-- eslint-disable @typescript-eslint/no-explicit-any -->
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { VueFlow, useVueFlow, Position, addEdge } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import type { Node, Edge, Connection } from '@vue-flow/core'
+import { NodeToolbar } from '@vue-flow/node-toolbar'
 
-// Componentes personalizados
+// Import custom node components
+import DetectChangesNode from '~/components/DetectChangesNode.vue'
+import GetFileInfoNode from '~/components/GetFileInfoNode.vue'
+import UploadToCloudNode from '~/components/UploadToCloudNode.vue'
+import RegisterUploadNode from '~/components/RegisterUploadNode.vue'
+import NotifyUserNode from '~/components/NotifyUserNode.vue'
+import SendEmailNode from '~/components/SendEmailNode.vue'
+import MoveFileNode from '~/components/MoveFileNode.vue'
+import NotifySlackNode from '~/components/NotifySlackNode.vue'
+import GenerateThumbnailNode from '~/components/GenerateThumbnailNode.vue'
+import RunScriptNode from '~/components/RunScriptNode.vue'
+import ConnectGoogleNode from '~/components/ConnectGoogleNode.vue'
+import EjecutarSubidaNode from '~/components/EjecutarSubidaNode.vue'
 import InputNode from '../components/InputNode.vue'
 import ValidationNode from '../components/ValidationNode.vue'
 import ExecuteNode from '../components/ExecuteNode.vue'
 import OutputNode from '../components/OutputNode.vue'
 
+const { onConnect, project } = useVueFlow()
+const trashZone = ref<HTMLElement | null>(null)
+
+// Nodes and edges
+const nodes = ref<Node[]>([])
+const edges = ref<Edge[]>([])
+
+// Form data and result
+const formData = ref({
+  nombre: '',
+  apellido: ''
+})
+const resultado = ref('')
+
+// Google Drive auth
+const googleAuthUrl = ref('')
+const isGoogleAuthed = ref(false)
+
+// Flow state
+const flowState = ref({})
+const isCtrlPressed = ref(false)
+
+// Node types
 const nodeTypes = {
   inputNode: InputNode,
   validationNode: ValidationNode,
   executeNode: ExecuteNode,
   outputNode: OutputNode,
+  detectChanges: DetectChangesNode,
+  getFileInfo: GetFileInfoNode,
+  uploadToCloud: UploadToCloudNode,
+  registerUpload: RegisterUploadNode,
+  notifyUser: NotifyUserNode,
+  sendEmail: SendEmailNode,
+  moveFile: MoveFileNode,
+  notifySlack: NotifySlackNode,
+  generateThumbnail: GenerateThumbnailNode,
+  runScript: RunScriptNode,
+  connectGoogle: ConnectGoogleNode,
+  ejecutarSubida: EjecutarSubidaNode,
 }
 
-const { onConnect, project } = useVueFlow()
-
-// Nodos iniciales
-const nodes = ref<Node[]>([])
-const edges = ref<Edge[]>([])
-
-// Datos del formulario
-const formData = ref({
-  nombre: '',
-  apellido: ''
-})
-
-// Resultado de la ejecución
-const resultado = ref('')
-
-// Nodos disponibles para arrastrar
+// Drag nodes
 const dragNodes = [
   {
-    id: '1',
+    id: 'connect-google',
+    type: 'connectGoogle',
+    data: { label: 'Conectar Google Drive' },
+    description: 'Nodo para conectar tu cuenta de Google Drive',
+  },
+  {
+    id: 'input-name',
     type: 'inputNode',
     data: { label: 'Nombre', field: 'nombre' },
-    position: { x: 0, y: 0 },
-    sourcePosition: Position.Right,
   },
   {
-    id: '2',
+    id: 'input-apellido',
     type: 'inputNode',
     data: { label: 'Apellido', field: 'apellido' },
-    position: { x: 0, y: 0 },
-    sourcePosition: Position.Right,
   },
   {
-    id: '3',
+    id: 'validation',
     type: 'validationNode',
     data: { label: 'Validar Datos' },
-    position: { x: 0, y: 0 },
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
   },
   {
-    id: '4',
-    type: 'executeNode',
-    data: { label: 'Ejecutar' },
-    position: { x: 0, y: 0 },
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
-  },
-  {
-    id: '5',
+    id: 'output',
     type: 'outputNode',
     data: { label: 'Resultado' },
-    position: { x: 0, y: 0 },
-    targetPosition: Position.Left,
+  },
+  {
+    id: 'detectChanges',
+    type: 'detectChanges',
+    data: { label: 'Detectar Cambios en Carpeta', description: 'Monitoriza carpeta local y emite eventos de archivos nuevos o modificados.' },
+  },
+  {
+    id: 'getFileInfo',
+    type: 'getFileInfo',
+    data: { label: 'Obtener Info del Archivo', description: 'Extrae metadata del archivo detectado.' },
+  },
+  {
+    id: 'uploadToCloud',
+    type: 'uploadToCloud',
+    data: { label: 'Subir Archivo a la Nube', description: 'Sube el archivo a Google Drive o Dropbox.' },
+  },
+  {
+    id: 'registerUpload',
+    type: 'registerUpload',
+    data: { label: 'Registrar Subida', description: 'Guarda log con nombre, fecha/hora y estado.' },
+  },
+  {
+    id: 'notifyUser',
+    type: 'notifyUser',
+    data: { label: 'Notificar Usuario', description: 'Muestra notificación visual o email.' },
+  },
+  {
+    id: 'sendEmail',
+    type: 'sendEmail',
+    data: { label: 'Enviar Email', description: 'Envía un email tras la subida.' },
+  },
+  {
+    id: 'moveFile',
+    type: 'moveFile',
+    data: { label: 'Mover Archivo', description: 'Mueve archivo a carpeta destino.' },
+  },
+  {
+    id: 'notifySlack',
+    type: 'notifySlack',
+    data: { label: 'Notificar Slack', description: 'Envía mensaje a Slack.' },
+  },
+  {
+    id: 'generateThumbnail',
+    type: 'generateThumbnail',
+    data: { label: 'Generar Miniatura', description: 'Genera miniatura de imagen.' },
+  },
+  {
+    id: 'runScript',
+    type: 'runScript',
+    data: { label: 'Ejecutar Script', description: 'Ejecuta script personalizado.' },
   },
 ]
 
-// Actualizar datos del formulario
-const updateFormData = (field: string, value: string) => {
-  formData.value[field] = value
-}
-
-// Validar datos
-const validateData = () => {
-  if (!formData.value.nombre.trim()) {
-    return 'El nombre es requerido'
+// Persistence
+watch(nodes, (val) => {
+  try {
+    localStorage.setItem('vueflow_nodes', JSON.stringify(val))
+  } catch (e) {
+    console.error('Error saving nodes:', e)
   }
-  if (!formData.value.apellido.trim()) {
-    return 'El apellido es requerido'
+}, { deep: true })
+
+watch(edges, (val) => {
+  try {
+    localStorage.setItem('vueflow_edges', JSON.stringify(val))
+  } catch (e) {
+    console.error('Error saving edges:', e)
   }
-  return null
-}
+}, { deep: true })
 
-// Ejecutar flujo
-const executeFlow = () => {
-  const validationError = validateData()
-  if (validationError) {
-    resultado.value = `Error: ${validationError}`
-    return
-  }
-  
-  resultado.value = `¡Hola ${formData.value.nombre} ${formData.value.apellido}!`
-}
-
-// Manejar conexiones entre nodos
-onConnect((params) => {
-  const newEdge = {
-    ...params,
-    id: `e${params.source}->${params.target}`,
-    animated: true,
-  }
-  edges.value = addEdge(newEdge, edges.value)
-})
-
-// Manejar clic en nodo para eliminarlo con Ctrl + clic
-const isCtrlPressed = ref(false)
-
-// Detectar cuando se presiona o suelta la tecla Ctrl
-const handleKeyDown = (event: KeyboardEvent) => {
-  if (event.key === 'Control') {
-    isCtrlPressed.value = true
-  }
-}
-
-const handleKeyUp = (event: KeyboardEvent) => {
-  if (event.key === 'Control') {
-    isCtrlPressed.value = false
-  }
-}
-
-// Agregar event listeners para la tecla Ctrl
+// Load saved state
 onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-  window.addEventListener('keyup', handleKeyUp)
-  
-  // Limpiar los event listeners cuando el componente se desmonte
-  return () => {
-    window.removeEventListener('keydown', handleKeyDown)
-    window.removeEventListener('keyup', handleKeyUp)
-  }
+  loadSavedState()
+  setupEventListeners()
+  fetchGoogleAuthUrl()
+  handleGoogleDriveCallback()
 })
 
-// Función para eliminar un nodo y sus conexiones
-const deleteNode = (nodeId: string) => {
-  console.log('Intentando eliminar nodo:', nodeId)
-  
-  // Crear copias de los arrays actuales
-  const updatedNodes = [...nodes.value]
-  const updatedEdges = [...edges.value]
-  
-  // Encontrar el índice del nodo
-  const nodeIndex = updatedNodes.findIndex(n => n.id === nodeId)
-  
-  if (nodeIndex === -1) {
-    console.log('Nodo no encontrado:', nodeId)
-    return
-  }
-  
-  // Encontrar y eliminar las conexiones relacionadas
-  const connectedEdgeIds = updatedEdges
-    .filter(edge => edge.source === nodeId || edge.target === nodeId)
-    .map(edge => edge.id)
-  
-  // Filtrar los edges para mantener solo los no conectados al nodo
-  const filteredEdges = updatedEdges.filter(
-    edge => !connectedEdgeIds.includes(edge.id)
-  )
-  
-  // Filtrar los nodos para eliminar el nodo objetivo
-  const filteredNodes = updatedNodes.filter(node => node.id !== nodeId)
-  
-  console.log(`Nodo ${nodeId} y sus ${connectedEdgeIds.length} conexiones serán eliminados`)
-  
-  // Actualizar las referencias reactivas
-  nodes.value = filteredNodes
-  edges.value = filteredEdges
-}
-
-// Manejar clic en nodo para eliminarlo con Ctrl + clic
-const onNodeClick = (event: MouseEvent, node: Node) => {
-  console.log('Clic en nodo:', node.id, 'Ctrl presionado:', event.ctrlKey)
-  
-  if (event.ctrlKey) {
-    event.preventDefault()
-    event.stopPropagation()
+function loadSavedState() {
+  try {
+    const savedNodes = localStorage.getItem('vueflow_nodes')
+    const savedEdges = localStorage.getItem('vueflow_edges')
     
-    // Llamar a la función de eliminación
-    deleteNode(node.id)
+    if (savedNodes) nodes.value = JSON.parse(savedNodes)
+    if (savedEdges) edges.value = JSON.parse(savedEdges)
+    
+    if (!savedNodes && !savedEdges) {
+      initializeDefaultFlow()
+    }
+  } catch (e) {
+    console.error('Error loading flow:', e)
+    initializeDefaultFlow()
   }
 }
 
-// Manejar el inicio del arrastre de un nodo
-const onDragStart = (event: DragEvent, nodeType: string, nodeData: any) => {
-  if (event.dataTransfer) {
-    event.dataTransfer.setData('application/vueflow', JSON.stringify({ type: nodeType, data: nodeData }))
-    event.dataTransfer.effectAllowed = 'move'
-  }
-}
-
-// Manejar la caída de un nodo
-const onDrop = (event: DragEvent) => {
-  if (!event.dataTransfer) return
-  
-  const data = JSON.parse(event.dataTransfer.getData('application/vueflow'))
-  const position = project({ x: event.clientX, y: event.clientY - 40 })
-  
-  const newNode = {
-    id: `${data.type}-${Date.now()}`,
-    type: data.type,
-    position,
-    data: data.data,
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
-  }
-  
-  nodes.value = [...nodes.value, newNode]
-}
-
-const onDragOver = (event: DragEvent) => {
-  event.preventDefault()
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move'
-  }
-}
-
-const onPaneReady = () => {
-  console.log('Panel listo')
-}
-
-// Inicializar con algunos nodos de ejemplo
-onMounted(() => {
-  const initialNodes = [
+function initializeDefaultFlow() {
+  nodes.value = [
     {
       id: 'node-1',
       type: 'inputNode',
@@ -269,35 +231,408 @@ onMounted(() => {
     },
   ]
 
-  const initialEdges = [
+  edges.value = [
     { id: 'e1-3', source: 'node-1', target: 'node-3', animated: true },
     { id: 'e2-3', source: 'node-2', target: 'node-3', animated: true },
     { id: 'e3-4', source: 'node-3', target: 'node-4', animated: true },
     { id: 'e4-5', source: 'node-4', target: 'node-5', animated: true },
   ]
+}
 
-  nodes.value = initialNodes
-  edges.value = initialEdges
+function setupEventListeners() {
+  window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('keyup', handleKeyUp)
+  
+  return () => {
+    window.removeEventListener('keydown', handleKeyDown)
+    window.removeEventListener('keyup', handleKeyUp)
+  }
+}
+
+// Event handlers
+function handleKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Control') {
+    isCtrlPressed.value = true
+  }
+}
+
+function handleKeyUp(event: KeyboardEvent) {
+  if (event.key === 'Control') {
+    isCtrlPressed.value = false
+  }
+}
+
+function onNodeDragStop(event: MouseEvent, node: Node) {
+  const trashEl = trashZone.value
+  if (!trashEl) return
+
+  const trashRect = trashEl.getBoundingClientRect()
+  const { clientX, clientY } = event
+
+  const isOverTrash = (
+    clientX >= trashRect.left &&
+    clientX <= trashRect.right &&
+    clientY >= trashRect.top &&
+    clientY <= trashRect.bottom
+  )
+
+  if (isOverTrash) {
+    deleteNode(node.id)
+  }
+}
+
+function onNodeClick(event: MouseEvent, node: Node) {
+  if (event.ctrlKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    deleteNode(node.id)
+  }
+}
+
+function deleteNode(nodeId: string) {
+  nodes.value = nodes.value.filter(n => n.id !== nodeId)
+  edges.value = edges.value.filter(e => e.source !== nodeId && e.target !== nodeId)
+}
+
+function onDragStart(event: DragEvent, nodeType: string, nodeData: any) {
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('application/vueflow', JSON.stringify({ 
+      type: nodeType, 
+      data: nodeData 
+    }))
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+function onDrop(event: DragEvent) {
+  if (!event.dataTransfer) return
+  
+  const data = JSON.parse(event.dataTransfer.getData('application/vueflow'))
+  const position = project({ x: event.clientX, y: event.clientY - 40 })
+  
+  const newNode = {
+    id: `${data.type}-${Date.now()}`,
+    type: data.type,
+    position,
+    data: data.data,
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  }
+  
+  nodes.value = [...nodes.value, newNode]
+}
+
+function onDragOver(event: DragEvent) {
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function onPaneReady() {
+  console.log('Panel ready')
+}
+
+// Form logic
+function updateFormData(field: string, value: string) {
+  formData.value[field] = value
+}
+
+function validateData() {
+  if (!formData.value.nombre.trim()) {
+    return 'El nombre es requerido'
+  }
+  if (!formData.value.apellido.trim()) {
+    return 'El apellido es requerido'
+  }
+  return null
+}
+
+function executeFlow() {
+  const validationError = validateData()
+  if (validationError) {
+    resultado.value = `Error: ${validationError}`
+    return
+  }
+  
+  resultado.value = `¡Hola ${formData.value.nombre} ${formData.value.apellido}!`
+}
+
+// Connection handler
+onConnect((params) => {
+  const newEdge = {
+    ...params,
+    id: `e${params.source}->${params.target}`,
+    animated: true,
+  }
+  edges.value = addEdge(newEdge, edges.value)
 })
+
+// Google Drive functions
+async function fetchGoogleAuthUrl() {
+  try {
+    const res = await fetch('/api/google-drive-auth')
+    const data = await res.json()
+    if (data.url) {
+      googleAuthUrl.value = data.url
+    }
+  } catch (e) {
+    console.error('Error fetching Google auth URL:', e)
+  }
+}
+
+async function handleGoogleDriveCallback() {
+  const url = new URL(window.location.href)
+  const code = url.searchParams.get('code')
+  if (code) {
+    try {
+      const res = await $fetch(`/api/google-drive-token?code=${code}`)
+      const data = await res.json()
+      if (data.tokens) {
+        localStorage.setItem('googleDriveTokens', JSON.stringify(data.tokens))
+        isGoogleAuthed.value = true
+      }
+    } catch (e) {
+      console.error('Error handling Google callback:', e)
+    }
+    url.searchParams.delete('code')
+    window.history.replaceState({}, document.title, url.pathname)
+  }
+}
+
+// File upload logic
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+function openFileSelector() {
+  fileInputRef.value?.click()
+}
+
+function onFilesSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+  runUploadFlow(Array.from(input.files))
+}
+
+async function runUploadFlow(files: File[]) {
+  const tokensStr = localStorage.getItem('googleDriveTokens')
+  if (!tokensStr) {
+    alert('Primero conecta Google Drive')
+    return
+  }
+  
+  const tokens = JSON.parse(tokensStr)
+  
+  for (const file of files) {
+    const formData = new FormData()
+    formData.append('name', file.name)
+    formData.append('mimeType', file.type || 'application/octet-stream')
+    formData.append('buffer', file)
+    formData.append('tokens', JSON.stringify(tokens))
+    
+    try {
+      const res = await $fetch('/api/google-drive-upload', {
+        method: 'POST',
+        body: formData
+      })
+      const result = await res.json()
+      if (result.id) {
+        alert('Archivo subido: ' + result.name)
+      } else {
+        alert('Error subiendo archivo: ' + (result.error || JSON.stringify(result)))
+      }
+    } catch (err) {
+      alert('Error subiendo archivo: ' + err)
+    }
+  }
+}
+
+async function onEjecutarSubidaNode(nodeId: string) {
+  const detectNode = nodes.value.find(n => n.type === 'detectChanges')
+  if (!detectNode) {
+    alert('Debes conectar un nodo "Detectar Cambios" antes de ejecutar la subida')
+    return
+  }
+  
+  try {
+    const dirHandle = await window.showDirectoryPicker()
+    if (!dirHandle) return
+
+    const lastFiles = new Map<string, number>()
+    
+    async function scanAndUpload() {
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file') {
+          const file = await entry.getFile()
+          const mtime = file.lastModified
+          if (!lastFiles.has(file.name) || lastFiles.get(file.name) !== mtime) {
+            lastFiles.set(file.name, mtime)
+            await runUploadFlow([file])
+          }
+        }
+      }
+      setTimeout(scanAndUpload, 2000)
+    }
+    
+    scanAndUpload()
+    alert('Observando carpeta y subiendo cambios automáticamente...')
+  } catch (e) {
+    alert('No se pudo seleccionar carpeta: ' + e)
+  }
+}
+
+// Flow execution
+async function runFlow(startNodeId: string) {
+  const nodeMap = Object.fromEntries(nodes.value.map(n => [n.id, n]))
+  const edgeMap = edges.value.reduce((acc, e) => {
+    if (!acc[e.source]) acc[e.source] = []
+    acc[e.source].push(e.target)
+    return acc
+  }, {} as Record<string, string[]>)
+  
+  let currentNodeId = startNodeId
+  let payload = {}
+  const log = []
+  
+  while (currentNodeId) {
+    const node = nodeMap[currentNodeId]
+    if (!node) break
+    
+    switch (node.type) {
+      case 'detectChanges':
+        payload = { ...payload, file: { name: 'nuevo_archivo.txt', size: 1234 } }
+        log.push('Detectado archivo: ' + payload.file.name)
+        break
+      case 'getFileInfo':
+        payload = { ...payload, info: { ext: 'txt', ...payload.file } }
+        log.push('Extraída metadata: ' + JSON.stringify(payload.info))
+        break
+      case 'uploadToCloud':
+        // eslint-disable-next-line no-case-declarations
+        const upRes = await api.uploadToCloud(payload.file, node.data?.provider || 'googleDrive')
+        payload = { ...payload, upload: upRes }
+        log.push('Subida: ' + (upRes.success ? 'OK' : 'Fallo'))
+        break
+      case 'registerUpload':
+        payload = { ...payload, log: { ...payload.upload, date: new Date().toISOString() } }
+        log.push('Registrado en log')
+        break
+      case 'notifyUser':
+        log.push('Notificado usuario (' + (node.data?.type || 'popup') + ')')
+        break
+      case 'sendEmail':
+        await api.sendEmail(node.data?.to || 'test@email.com', payload.file)
+        log.push('Email enviado')
+        break
+      case 'moveFile':
+        log.push('Archivo movido a ' + (node.data?.dest || '/destino'))
+        break
+      case 'notifySlack':
+        await api.notifySlack(node.data?.channel || '#general', 'Backup realizado')
+        log.push('Slack notificado')
+        break
+      case 'generateThumbnail':
+        await api.generateThumbnail(payload.file, node.data?.width || 128, node.data?.height || 128)
+        log.push('Miniatura generada')
+        break
+      case 'runScript':
+        await api.runScript(node.data?.script || '', payload.file)
+        log.push('Script ejecutado')
+        break
+      default:
+        log.push('Nodo ejecutado: ' + node.type)
+    }
+    
+    const next = (edgeMap[currentNodeId] || [])[0]
+    currentNodeId = next
+  }
+  
+  flowState.value = { log, payload }
+}
+
+function runBackupDemo() {
+  const startNode = nodes.value.find(n => n.type === 'detectChanges')
+  if (startNode) runFlow(startNode.id)
+}
+
+// API simulation
+const api = {
+  uploadToCloud: async (file: { name: string }, provider: string) => {
+    if (provider !== 'googleDrive') {
+      await new Promise(r => setTimeout(r, 700))
+      if (Math.random() > 0.2) return { success: true, url: 'https://fakecloud.com/' + file.name }
+      return { success: false, error: 'Error al subir archivo' }
+    }
+    
+    const tokens = JSON.parse(localStorage.getItem('googleDriveTokens') || 'null')
+    if (!tokens) return { success: false, error: 'No autenticado en Google Drive' }
+    
+    const buffer = new TextEncoder().encode('Contenido de ejemplo')
+    const res = await fetch('/api/google-drive-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: file.name,
+        mimeType: 'text/plain',
+        buffer: Array.from(buffer),
+        tokens
+      })
+    })
+    
+    const data = await res.json()
+    if (data.id) return { success: true, url: data.webViewLink }
+    return { success: false, error: 'Error en subida Google Drive' }
+  },
+  sendEmail: async (_to: string, _file: any) => {
+    await new Promise(r => setTimeout(r, 400))
+    return { sent: true }
+  },
+  notifySlack: async (_channel: string, _msg: string) => {
+    await new Promise(r => setTimeout(r, 300))
+    return { notified: true }
+  },
+  generateThumbnail: async (file: any, _width: number, _height: number) => {
+    await new Promise(r => setTimeout(r, 500))
+    return { url: 'https://fakecdn.com/thumb/' + file.name }
+  },
+  runScript: async (_script: string, _file: any) => {
+    await new Promise(r => setTimeout(r, 600))
+    return { output: 'Script ejecutado correctamente' }
+  },
+}
 </script>
 
 <template>
   <div class="app-container">
+    <div class="sidebar">
+      <h3>Nodos disponibles</h3>
+      <ul>
+        <li 
+          v-for="node in dragNodes" 
+          :key="node.id"
+          draggable="true" 
+          @dragstart="(e) => onDragStart(e, node.type, node.data)"
+        >
+          {{ node.data.label }}
+          <small v-if="node.description">{{ node.description }}</small>
+        </li>
+      </ul>
+    </div>
+    
     <div class="ctrl-indicator" :class="{ 'active': isCtrlPressed }">
       Modo eliminación (Ctrl + clic)
     </div>
-    <div class="sidebar">
-      <h3>Nodos disponibles</h3>
-      <div 
-        v-for="node in dragNodes" 
-        :key="node.id"
-        class="draggable-node"
-        draggable
-        @dragstart="onDragStart($event, node.type, node.data)"
-      >
-        {{ node.data.label }}
-      </div>
+    
+    <div class="node-toolbar">
+      <NodeToolbar :node-types="nodeTypes" :drag-nodes="dragNodes" direction="vertical" />
     </div>
+    
+    <input 
+      ref="fileInputRef" 
+      type="file" 
+      multiple 
+      style="display:none" 
+      @change="onFilesSelected" 
+    >
     
     <div class="flow-container">
       <VueFlow
@@ -311,75 +646,152 @@ onMounted(() => {
         :pan-on-scroll="true"
         :selection-on-drag="false"
         :selection-mode="'partial'"
+        fit-view
         @connect="onConnect"
         @drop="onDrop"
         @dragover="onDragOver"
         @node-click="onNodeClick"
+        @node-drag-stop="onNodeDragStop"
         @pane-ready="onPaneReady"
-        fit-view
       >
         <Background />
         
+        <!-- Node templates -->
         <template #node-inputNode="{ data, id }">
-          <div class="custom-node">
-            <InputNode 
-              :label="data.label" 
-              :field="data.field" 
-              @update:value="(val) => updateFormData(data.field, val)" 
-            />
-          </div>
+          <InputNode 
+            :label="data.label" 
+            :field="data.field" 
+            @update:value="(val) => updateFormData(data.field, val)" 
+          />
         </template>
         
         <template #node-validationNode="{ data }">
-          <div class="custom-node">
-            <ValidationNode :label="data.label" :is-valid="!validateData()" />
-          </div>
+          <ValidationNode :label="data.label" :is-valid="!validateData()" />
         </template>
         
         <template #node-executeNode="{ data }">
-          <div class="custom-node">
-            <ExecuteNode :label="data.label" @execute="executeFlow" />
-          </div>
+          <ExecuteNode :label="data.label" @execute="executeFlow" />
         </template>
         
         <template #node-outputNode="{ data }">
-          <div class="custom-node">
-            <OutputNode :label="data.label" :result="resultado" />
-          </div>
+          <OutputNode :label="data.label" :result="resultado" />
+        </template>
+        
+        <template #node-detectChanges="{ data }">
+          <DetectChangesNode :label="data.label" />
+        </template>
+        
+        <template #node-getFileInfo="{ data }">
+          <GetFileInfoNode :label="data.label" />
+        </template>
+        
+        <template #node-uploadToCloud="{ data }">
+          <UploadToCloudNode :label="data.label" />
+        </template>
+        
+        <template #node-registerUpload="{ data }">
+          <RegisterUploadNode :label="data.label" />
+        </template>
+        
+        <template #node-notifyUser="{ data }">
+          <NotifyUserNode :label="data.label" />
+        </template>
+        
+        <template #node-sendEmail="{ data }">
+          <SendEmailNode :label="data.label" />
+        </template>
+        
+        <template #node-moveFile="{ data }">
+          <MoveFileNode :label="data.label" />
+        </template>
+        
+        <template #node-notifySlack="{ data }">
+          <NotifySlackNode :label="data.label" />
+        </template>
+        
+        <template #node-generateThumbnail="{ data }">
+          <GenerateThumbnailNode :label="data.label" />
+        </template>
+        
+        <template #node-runScript="{ data }">
+          <RunScriptNode :label="data.label" />
+        </template>
+        
+        <template #node-connectGoogle="{ data }">
+          <ConnectGoogleNode 
+            :label="data.label" 
+            :auth-url="googleAuthUrl" 
+            :is-authed="isGoogleAuthed" 
+            @auth="fetchGoogleAuthUrl"
+          />
+        </template>
+        
+        <template #node-ejecutarSubida="{ data, id }">
+          <EjecutarSubidaNode 
+            :label="data.label" 
+            @ejecutar-subida="onEjecutarSubidaNode(id)" 
+          />
         </template>
       </VueFlow>
+    </div>
+    
+    <div ref="trashZone" class="trash-zone">
+      🗑️ Papelera
     </div>
   </div>
 </template>
 
 <style>
-/* import the necessary styles for Vue Flow to work */
 @import '@vue-flow/core/dist/style.css';
 @import '@vue-flow/core/dist/theme-default.css';
 
-/* Estilos globales */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html, body, #__nuxt {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-}
-
-/* Contenedor principal */
 .app-container {
   display: flex;
   height: 100vh;
   width: 100%;
+  position: relative;
 }
 
-/* Barra lateral */
+.sidebar {
+  width: 250px;
+  background: #f8f9fa;
+  padding: 15px;
+  border-right: 1px solid #e2e8f0;
+  overflow-y: auto;
+}
+
+.sidebar h3 {
+  margin-bottom: 15px;
+  color: #2d3748;
+}
+
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+
+.sidebar li {
+  padding: 10px;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  cursor: grab;
+  transition: all 0.2s;
+}
+
+.sidebar li:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.sidebar li small {
+  display: block;
+  font-size: 0.8em;
+  color: #64748b;
+  margin-top: 4px;
+}
+
 .ctrl-indicator {
   position: absolute;
   top: 10px;
@@ -393,7 +805,6 @@ html, body, #__nuxt {
   opacity: 0;
   transform: translateY(-10px);
   transition: all 0.3s ease;
-  pointer-events: none;
 }
 
 .ctrl-indicator.active {
@@ -401,40 +812,13 @@ html, body, #__nuxt {
   transform: translateY(0);
 }
 
-.sidebar {
-  width: 200px;
-  background: #f8f9fa;
-  padding: 15px;
-  border-right: 1px solid #e2e8f0;
-  overflow-y: auto;
+.node-toolbar {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 20;
 }
 
-.sidebar h3 {
-  margin-bottom: 15px;
-  color: #2d3748;
-  font-size: 16px;
-  text-align: left;
-}
-
-/* Nodos arrastrables */
-.draggable-node {
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 8px 12px;
-  margin-bottom: 8px;
-  cursor: move;
-  font-size: 14px;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.draggable-node:hover {
-  background: #f1f5f9;
-  transform: translateX(2px);
-}
-
-/* Contenedor del flujo */
 .flow-container {
   flex: 1;
   height: 100%;
@@ -442,18 +826,21 @@ html, body, #__nuxt {
   background: #f8fafc;
 }
 
-/* Estilos para los nodos */
-:deep(.vue-flow__node) {
-  padding: 0;
+.trash-zone {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: #ffdddd;
+  border: 2px dashed #ff4444;
+  padding: 12px 16px;
   border-radius: 6px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  transition: all 0.2s;
-  background: transparent;
-  border: none;
+  font-weight: bold;
+  z-index: 1000;
+  transition: background-color 0.3s;
 }
 
-:deep(.vue-flow__node:hover) {
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+.trash-zone.over {
+  background-color: #ffaaaa;
 }
 
 .custom-node {
@@ -465,61 +852,38 @@ html, body, #__nuxt {
   min-width: 150px;
 }
 
-/* Estilos para los handles */
-:deep(.vue-flow__handle) {
-  width: 10px;
-  height: 10px;
-  background: #3b82f6;
-  border: 2px solid white;
-  border-radius: 50%;
+.vue-flow__node-toolbar {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 16px 0 rgba(0,0,0,.08);
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 170px;
+  z-index: 99;
 }
 
-:deep(.vue-flow__handle-left) {
-  left: -5px;
-}
-
-:deep(.vue-flow__handle-right) {
-  right: -5px;
-}
-
-/* Estilos para las conexiones */
-:deep(.vue-flow__edge-path) {
-  stroke: #94a3b8;
-  stroke-width: 2;
-}
-
-:deep(.vue-flow__edge.selected .vue-flow__edge-path) {
-  stroke: #3b82f6;
-}
-
-/* Fondo del flujo */
-:deep(.vue-flow__background) {
-  background: #f8fafc;
-}
-
-/* Barra de herramientas */
-:deep(.vue-flow__controls) {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+.vue-flow__node-toolbar__item {
+  cursor: grab;
+  padding: 8px 16px;
   border-radius: 4px;
-  overflow: hidden;
-}
-
-:deep(.vue-flow__controls-button) {
-  background: white;
+  background: #f4f4f5;
+  color: #222;
+  font-size: 14px;
+  transition: background .2s;
   border: none;
-  border-bottom: 1px solid #e2e8f0;
-  color: #64748b;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: all 0.2s;
+  outline: none;
+  width: 100%;
+  text-align: left;
 }
 
-:deep(.vue-flow__controls-button:hover) {
-  background: #f1f5f9;
+.vue-flow__node-toolbar__item:hover {
+  background: #e0e7ff;
+  color: #1d4ed8;
 }
 
-:deep(.vue-flow__controls-button svg) {
-  width: 16px;
-  height: 16px;
+.vue-flow__node-toolbar__item:active {
+  background: #c7d2fe;
 }
 </style>
