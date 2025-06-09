@@ -23,6 +23,9 @@ import InputNode from '../components/InputNode.vue'
 import ValidationNode from '../components/ValidationNode.vue'
 import ExecuteNode from '../components/ExecuteNode.vue'
 import OutputNode from '../components/OutputNode.vue'
+import TaskNode from '../components/TaskNode.vue'
+import CodeNode from '../components/CodeNode.vue'
+import FormNode from '../components/FormNode.vue'
 
 const { onConnect, project } = useVueFlow()
 const trashZone = ref<HTMLElement | null>(null)
@@ -64,6 +67,9 @@ const nodeTypes = {
   runScript: RunScriptNode,
   connectGoogle: ConnectGoogleNode,
   ejecutarSubida: EjecutarSubidaNode,
+  taskNode: TaskNode,
+  codeNode: CodeNode,
+  formNode: defineComponent(FormNode),
 }
 
 // Drag nodes
@@ -144,6 +150,53 @@ const dragNodes = [
     type: 'runScript',
     data: { label: 'Ejecutar Script', description: 'Ejecuta script personalizado.' },
   },
+  {
+    id: 'taskNode1',
+    type: 'taskNode',
+    position: { x: 100, y: 150 },
+    data: {
+      titulo: 'Implementar login',
+      estado: 'pendiente',
+      responsable: 'Iván',
+      prioridad: 'alta',
+    },
+  },
+  {
+  id: 'codeNode',
+  type: 'codeNode',
+  position: { x: 300, y: 400 },
+  data: {
+    lenguaje: 'JavaScript',
+    codigo: `function saludar(nombre) {
+  return 'Hola ' + nombre;
+}`,
+    editable: true,
+  },
+},
+{
+  id: 'super1',
+  type: 'formNode',
+  position: { x: 600, y: 300 },
+  data: {
+    title: 'Perfil Usuario',
+    editable: true,
+    roles: ['Admin', 'Editor', 'Viewer'],
+    initialValues: {
+      nombre: 'Iván',
+      activo: true,
+      rol: 'Editor',
+      descripcion: 'Me gusta programar con Vue Flow',
+    },
+    onSubmit: (datos) => {
+      console.log('Datos enviados desde SuperNode:', datos)
+      alert(`Enviado: ${JSON.stringify(datos, null, 2)}`)
+    },
+    bgColor: '#e6f0ff',
+    borderColor: '#3b82f6',
+  },
+}
+
+
 ]
 
 // Persistence
